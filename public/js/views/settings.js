@@ -387,7 +387,7 @@ async function about(body) {
       <ul class="plain">
         <li><b>Powered by BGG.</b> Board game information comes from <a class="ext" href="https://boardgamegeek.com" target="_blank" rel="noopener">BoardGameGeek</a>.</li>
         <li><b>TMDB.</b> This product uses the TMDB API but is not endorsed or certified by TMDB. Movie and TV information and images come from <a class="ext" href="https://www.themoviedb.org" target="_blank" rel="noopener">The Movie Database</a>.</li>
-        <li><b>Where to watch.</b> ${ATTRIBUTION} Other-service links run a DuckDuckGo search of that service\u2019s site.</li>
+        <li><b>Where to watch.</b> ${ATTRIBUTION} The \u201cSearch for it on\u201d buttons open each service\u2019s own search page.</li>
         <li><b>Internet Archive.</b> Public-domain films play from the <a class="ext" href="https://archive.org" target="_blank" rel="noopener">Internet Archive</a>, and each one links back to its page there.</li>
         <li><b>IMDb</b> links are provided for reference. No data is taken from IMDb.</li>
         <li><b>Barcode lookups</b> come from <a class="ext" href="https://www.upcitemdb.com" target="_blank" rel="noopener">UPCitemdb</a>. Barcode reading uses <a class="ext" href="https://github.com/Sec-ant/zxing-wasm" target="_blank" rel="noopener">zxing-wasm</a>; zip files use <a class="ext" href="https://stuk.github.io/jszip/" target="_blank" rel="noopener">JSZip</a>.</li>

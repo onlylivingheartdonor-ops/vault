@@ -221,19 +221,20 @@ function serviceChips(list, fallbackLink) {
   }).join('');
 }
 
-// Services with no data feed: each link searches that service's own site for this title.
+// Each button opens that service's own search page for this title (US addresses, checked by hand).
 const SEARCH_SITES = [
-  ['Pluto TV', 'pluto.tv'], ['Tubi', 'tubitv.com'], ['The Roku Channel', 'therokuchannel.roku.com'],
-  ['Plex', 'watch.plex.tv'], ['Kanopy', 'kanopy.com'], ['Hoopla', 'hoopladigital.com'],
+  ['Pluto TV', q => `https://pluto.tv/us/search/?term=${encodeURIComponent(q)}`],
+  ['Tubi', q => `https://tubitv.com/search/${encodeURIComponent(q)}`],
+  ['The Roku Channel', q => `https://therokuchannel.roku.com/search/${encodeURIComponent(q)}`],
+  ['Plex', q => `https://watch.plex.tv/search?query=${encodeURIComponent(q)}`],
+  ['Kanopy', q => `https://www.kanopy.com/en/search?query=${encodeURIComponent(q)}`],
+  ['Hoopla', q => `https://www.hoopladigital.com/search?q=${encodeURIComponent(q)}&scope=everything&type=direct`],
+  ['YouTube', q => `https://www.youtube.com/results?search_query=${encodeURIComponent(`${q} full movie`)}`],
 ];
-function otherServicesHtml(item) {
-  const q = item.title + (item.data.year ? ` ${item.data.year}` : '');
-  const links = SEARCH_SITES.map(([name, site]) =>
-    `<a class="btn small ghost" target="_blank" rel="noopener" href="https://duckduckgo.com/?q=${encodeURIComponent(`site:${site} ${q}`)}">${esc(name)}</a>`).join('');
-  const yt = `<a class="btn small ghost" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${item.title} full movie`)}">YouTube</a>`;
-  return `<details class="other-services"><summary>Check other services yourself</summary>
-    <p class="muted small">Each opens a search for \u201c${esc(item.title)}\u201d on that service.</p>
-    <div class="btn-row">${links}${yt}</div></details>`;
+function searchRowHtml(item) {
+  const links = SEARCH_SITES.map(([name, url]) =>
+    `<a class="btn small ghost" target="_blank" rel="noopener" href="${esc(url(item.title))}">${icon('search')} ${esc(name)}</a>`).join('');
+  return `<div class="wtw-group wtw-search"><h4>Search for it on</h4><div class="btn-row">${links}</div></div>`;
 }
 
 export function archivePlayer(id, title) {
@@ -270,7 +271,7 @@ export function whereToWatchHtml(item, { busy = false } = {}) {
   const sources = hasWatchmode() ? 'JustWatch and Watchmode' : 'JustWatch';
   return `<section class="panel wtw"><div class="panel-head"><h2>Where to watch</h2>
       ${w ? `<span class="muted" title="Checked with ${sources}">Checked ${fmtDate(w.checked)}</span><button class="btn small" data-wtw="recheck">${icon('refresh')} Check again</button>` : ''}</div>
-    ${ma}${body}${otherServicesHtml(item)}
+    ${ma}${body}${searchRowHtml(item)}
     <p class="attrib">${ATTRIBUTION}</p></section>`;
 }
 

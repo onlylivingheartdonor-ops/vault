@@ -678,7 +678,5 @@ a.provider { color: var(--text); }
 a.provider:hover { border-color: var(--accent); transform: translateY(-1px); }
 .provider span { display: flex; flex-direction: column; line-height: 1.2; }
 .provider small { font-size: 11px; color: var(--muted); }
-details.other-services { margin: 8px 0 4px; }
-details.other-services summary { cursor: pointer; color: var(--accent); font-size: 14px; }
-details.other-services .btn-row { margin-top: 8px; gap: 6px; }
-details.other-services p { margin: 6px 0 0; }
+.wtw-search .btn-row { gap: 6px; flex-wrap: wrap; }
+.wtw-search .btn svg { width: 14px; height: 14px; }
