@@ -212,11 +212,16 @@ export const needsWatchmode = item => hasWatchmode() && !!item.tmdb_id && (item.
   && stale(item.data.watch && item.data.watch.wm);
 
 // ---------------------------------------------------------------- page section
-function serviceChips(list, fallbackLink) {
+// A chip goes to the title itself when Watchmode gave a direct link; otherwise to that service's own
+// search for the title; only for services Vault has no search address for does it fall back to the
+// JustWatch listing on TMDB.
+function serviceChips(list, title, fallbackLink) {
   return list.map(p => {
-    const href = p.url || fallbackLink;
+    const search = siteSearchUrl(p.name, title);
+    const href = p.url || search || fallbackLink;
+    const tip = p.url ? `Open on ${p.name}` : search ? `Find it on ${p.name}` : 'See where to watch';
     const inner = `${p.logo ? `<img src="${esc(p.logo)}" alt="" loading="lazy">` : icon('play')}<span>${esc(p.name)}${p.ads ? '<small>with ads</small>' : ''}</span>`;
-    return href ? `<a class="provider" href="${esc(href)}" target="_blank" rel="noopener" title="${p.url ? `Open on ${esc(p.name)}` : 'See where to watch'}">${inner}</a>`
+    return href ? `<a class="provider" href="${esc(href)}" target="_blank" rel="noopener" title="${esc(tip)}">${inner}</a>`
       : `<span class="provider">${inner}</span>`;
   }).join('');
 }
@@ -227,12 +232,18 @@ const SEARCH_SITES = [
   ['Tubi', q => `https://tubitv.com/search/${encodeURIComponent(q)}`],
   ['The Roku Channel', q => `https://therokuchannel.roku.com/search/${encodeURIComponent(q)}`],
   ['Plex', q => `https://watch.plex.tv/search?query=${encodeURIComponent(q)}`],
-  ['Kanopy', q => `https://www.kanopy.com/en/search?query=${encodeURIComponent(q)}`],
+  // Kanopy can't take a search from the address, so it isn't in the row; its chip opens Kanopy's search page.
+  ['Kanopy', () => 'https://www.kanopy.com/en/search', { row: false }],
   ['Hoopla', q => `https://www.hoopladigital.com/search?q=${encodeURIComponent(q)}&scope=everything&type=direct`],
   ['YouTube', q => `https://www.youtube.com/results?search_query=${encodeURIComponent(`${q} full movie`)}`],
 ];
+function siteSearchUrl(serviceName, title) {
+  const k = serviceKey(serviceName);
+  const hit = SEARCH_SITES.find(([name]) => serviceKey(name) === k);
+  return hit ? hit[1](title) : null;
+}
 function searchRowHtml(item) {
-  const links = SEARCH_SITES.map(([name, url]) =>
+  const links = SEARCH_SITES.filter(([, , opt]) => !opt || opt.row !== false).map(([name, url]) =>
     `<a class="btn small ghost" target="_blank" rel="noopener" href="${esc(url(item.title))}">${icon('search')} ${esc(name)}</a>`).join('');
   return `<div class="wtw-group wtw-search"><h4>Search for it on</h4><div class="btn-row">${links}</div></div>`;
 }
@@ -260,7 +271,7 @@ export function whereToWatchHtml(item, { busy = false } = {}) {
   }
   const services = mergedServices(w);
   if (services.length) {
-    body += `<div class="wtw-group"><h4>Free to stream</h4><div class="providers">${serviceChips(services, w.link)}</div></div>`;
+    body += `<div class="wtw-group"><h4>Free to stream</h4><div class="providers">${serviceChips(services, item.title, w.link)}</div></div>`;
   } else if (w && !(a && a.id)) {
     body += `<p class="muted">Not listed as free anywhere right now.</p>`;
   }
