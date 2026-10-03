@@ -674,3 +674,11 @@ ul.plain { margin: 0; padding-left: 18px; display: flex; flex-direction: column;
 .watch-tag { color: #9d86ff; }
 .r-free { color: var(--ok) !important; display: flex; align-items: center; gap: 4px; font-weight: 500; }
 .r-free .ic { width: 13px; height: 13px; }
+a.provider { color: var(--text); }
+a.provider:hover { border-color: var(--accent); transform: translateY(-1px); }
+.provider span { display: flex; flex-direction: column; line-height: 1.2; }
+.provider small { font-size: 11px; color: var(--muted); }
+details.other-services { margin: 8px 0 4px; }
+details.other-services summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+details.other-services .btn-row { margin-top: 8px; gap: 6px; }
+details.other-services p { margin: 6px 0 0; }

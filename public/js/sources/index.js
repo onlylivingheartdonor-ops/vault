@@ -59,7 +59,15 @@ export async function refreshItem(item) {
 }
 
 export async function testSource(which) {
-  return which === 'bgg' ? bgg.test() : tmdb.test();
+  if (which === 'bgg') return bgg.test();
+  if (which === 'watchmode') {
+    const r = await fetch('/api/watchmode?path=%2Fsources%2F', { credentials: 'same-origin' });
+    let d = null;
+    try { d = await r.json(); } catch (e) { /* not JSON */ }
+    if (!r.ok || (d && d.ok === false)) throw new Error((d && d.error) || `Watchmode returned an error (${r.status}).`);
+    return 'Connected to Watchmode.';
+  }
+  return tmdb.test();
 }
 
 // ---- barcode text helpers

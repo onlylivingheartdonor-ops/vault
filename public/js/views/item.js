@@ -5,7 +5,7 @@ import { api, esc, $$, typeOf, coverUrl, backdropOf, fmtField, fieldValue, fmtDa
   setCustomCover, addPhotos } from '../util.js';
 import { setTitle, setBackdrop, refreshNav } from '../app.js';
 import { refreshItem } from '../sources/index.js';
-import { whereToWatchHtml, needsCheck, checkItem, setArchive, setMoviesAnywhereUrl, archivePlayer } from '../watch.js';
+import { whereToWatchHtml, needsCheck, needsWatchmode, checkItem, setArchive, setMoviesAnywhereUrl, archivePlayer } from '../watch.js';
 
 const STATUS_LABEL = { owned: 'Owned', wishlist: 'Wishlist', watchlist: 'Watchlist (free online)' };
 
@@ -278,11 +278,14 @@ export async function renderItem(ctx, typeKey, id) {
 
   // ---- Where to watch
   const host = v.querySelector('#wtw-host');
-  const drawWtw = () => {
+  const drawWtw = (busy = false) => {
     if (!host || !ctx.isCurrent()) return;
-    host.innerHTML = whereToWatchHtml(it);
+    host.innerHTML = whereToWatchHtml(it, { busy });
     const wire = (sel, fn) => $$(sel, host).forEach(b => b.onclick = async () => { try { await fn(b); } catch (e) { toast(e.message, 'error'); } });
-    wire('[data-wtw=recheck]', async b => { b.disabled = true; await checkItem(it); invalidate(it.type); drawWtw(); });
+    wire('[data-wtw=recheck]', async () => {
+      drawWtw(true);
+      try { await checkItem(it, { watchmode: true }); } finally { invalidate(it.type); drawWtw(); }
+    });
     wire('[data-wtw=confirm]', async () => {
       const c = it.data.watch.archive_candidate;
       await setArchive(it, { id: c.id, title: c.title, year: c.year || null });
@@ -314,7 +317,10 @@ export async function renderItem(ctx, typeKey, id) {
   };
   if (host) {
     drawWtw();
-    if (needsCheck(it)) checkItem(it).then(() => { invalidate(it.type); drawWtw(); }).catch(() => {});
+    if (needsCheck(it) || needsWatchmode(it)) {
+      drawWtw(true);
+      checkItem(it, { watchmode: needsWatchmode(it) }).then(() => { invalidate(it.type); drawWtw(); }).catch(() => drawWtw());
+    }
   }
   on('[data-act=ia-play]', async () => {
     await modal({ title: it.title, wide: true, cls: 'player-modal', body: archivePlayer(it.data.archive.id, it.data.archive.title) });

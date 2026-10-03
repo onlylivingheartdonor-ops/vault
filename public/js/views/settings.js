@@ -79,6 +79,12 @@ async function sources(body) {
       <label class="fld"><span>API key or Read Access Token</span><div class="secret"><input type="password" id="tmdb_key" placeholder="${st.has_tmdb_key ? '•••••••• (saved; paste a new one to replace)' : 'Paste your TMDB key'}" autocomplete="off"><button class="icon-btn" data-show="tmdb_key" title="Show">${icon('eye')}</button></div></label>
       <div class="btn-row"><button class="btn primary" data-save="tmdb_key">Save</button><button class="btn" data-test="tmdb">Test connection</button></div>
     </section>
+    <section class="panel"><div class="panel-head"><h2>Watchmode (free streaming)</h2><span class="status ${st.has_watchmode_key ? 'ok' : ''}">${st.has_watchmode_key ? 'Key saved' : 'Not connected'}</span></div>
+      <p>Finds which free services (Pluto TV, Tubi and others) have a movie or show, with direct links. Get a free key at <a class="ext" href="https://api.watchmode.com" target="_blank" rel="noopener">api.watchmode.com</a>.</p>
+      ${st.has_watchmode_key ? `<p class="muted">This month: about ${st.watchmode_used} of ${st.watchmode_budget} free lookups used. Vault checks a title when you open its page, at most once a month per title. Each check uses 2.</p>` : ''}
+      <label class="fld"><span>API key</span><div class="secret"><input type="password" id="watchmode_key" placeholder="${st.has_watchmode_key ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022 (saved; paste a new one to replace)' : 'Paste your Watchmode key'}" autocomplete="off"><button class="icon-btn" data-show="watchmode_key" title="Show">${icon('eye')}</button></div></label>
+      <div class="btn-row"><button class="btn primary" data-save="watchmode_key">Save</button><button class="btn" data-test="watchmode">Test connection</button></div>
+    </section>
     <section class="panel"><div class="panel-head"><h2>Barcode lookup</h2><span class="status ok">No key needed</span></div>
       <p>Barcodes are turned into product names with UPCitemdb’s free service (about 100 lookups a day). Items already in Vault are recognized without using a lookup.</p>
     </section>`;
@@ -381,7 +387,7 @@ async function about(body) {
       <ul class="plain">
         <li><b>Powered by BGG.</b> Board game information comes from <a class="ext" href="https://boardgamegeek.com" target="_blank" rel="noopener">BoardGameGeek</a>.</li>
         <li><b>TMDB.</b> This product uses the TMDB API but is not endorsed or certified by TMDB. Movie and TV information and images come from <a class="ext" href="https://www.themoviedb.org" target="_blank" rel="noopener">The Movie Database</a>.</li>
-        <li><b>Where to watch.</b> ${ATTRIBUTION}</li>
+        <li><b>Where to watch.</b> ${ATTRIBUTION} Other-service links run a DuckDuckGo search of that service\u2019s site.</li>
         <li><b>Internet Archive.</b> Public-domain films play from the <a class="ext" href="https://archive.org" target="_blank" rel="noopener">Internet Archive</a>, and each one links back to its page there.</li>
         <li><b>IMDb</b> links are provided for reference. No data is taken from IMDb.</li>
         <li><b>Barcode lookups</b> come from <a class="ext" href="https://www.upcitemdb.com" target="_blank" rel="noopener">UPCitemdb</a>. Barcode reading uses <a class="ext" href="https://github.com/Sec-ant/zxing-wasm" target="_blank" rel="noopener">zxing-wasm</a>; zip files use <a class="ext" href="https://stuk.github.io/jszip/" target="_blank" rel="noopener">JSZip</a>.</li>

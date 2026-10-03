@@ -4,7 +4,7 @@
 // stays thin — it stores data, proxies BGG/TMDB/UPC calls (adding the keys), and moves
 // image bytes. Parsing and mapping of source data happens in the browser.
 
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 const SCHEMA_VERSION = '1';
 
 // ---------------------------------------------------------------- defaults
@@ -359,6 +359,41 @@ async function proxyArchive(url) {
   return new Response(r.body, { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
 
+// Watchmode: free-service availability with direct links. The free plan allows 2,500 credits a month;
+// Vault keeps its own monthly tally and stops a little short of that.
+const WATCHMODE_MONTHLY_BUDGET = 2400;
+
+async function proxyWatchmode(env, url) {
+  const key = ((await getSetting(env, 'watchmode_key')) || '').trim();
+  if (!key) return fail('Watchmode needs an API key. Add it in Settings \u2192 Sources.', 502, { source: 'watchmode' });
+  const path = url.searchParams.get('path') || '';
+  let cost;
+  if (/^\/title\/(movie|tv)-\d+\/sources\/$/.test(path)) cost = 2;
+  else if (path === '/sources/') cost = 1;
+  else throw new HttpError('Unknown Watchmode request.');
+  const month = new Date().toISOString().slice(0, 7);
+  const [mRow, cRow] = await env.DB.batch([
+    env.DB.prepare(`SELECT value FROM settings WHERE key='wm_month'`),
+    env.DB.prepare(`SELECT value FROM settings WHERE key='wm_count'`),
+  ]);
+  const used = (mRow.results[0] && mRow.results[0].value === month) ? Number((cRow.results[0] || {}).value || 0) : 0;
+  if (used + cost > WATCHMODE_MONTHLY_BUDGET) {
+    return fail('Vault has used this month\u2019s free Watchmode lookups. They reset on the 1st.', 429, { source: 'watchmode', budget: true });
+  }
+  const target = new URL(`https://api.watchmode.com/v1${path}`);
+  target.searchParams.set('regions', 'US');
+  const r = await fetch(target.toString(), { headers: { 'X-API-Key': key, Accept: 'application/json', 'User-Agent': 'Vault/2.2 (personal collection catalog)' } });
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO settings(key,value) VALUES('wm_month',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(month),
+    env.DB.prepare(`INSERT INTO settings(key,value) VALUES('wm_count',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(String(used + cost)),
+  ]);
+  if (r.status === 401 || r.status === 403) return fail('Watchmode rejected the API key. Check it in Settings \u2192 Sources.', 502);
+  if (r.status === 404) return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  if (r.status === 429) return fail('Watchmode says the monthly limit has been reached.', 429, { source: 'watchmode', budget: true });
+  if (!r.ok) return fail(`Watchmode returned an error (${r.status}).`, 502);
+  return new Response(r.body, { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+}
+
 async function proxyUpc(code) {
   code = String(code || '').replace(/\D/g, '');
   if (!code) throw new HttpError('No barcode.');
@@ -383,14 +418,19 @@ async function api(request, env, url, user) {
     const [types, counts, settings] = await DB.batch([
       DB.prepare('SELECT * FROM types ORDER BY sort, name'),
       DB.prepare('SELECT type, status, COUNT(*) n FROM items GROUP BY type, status'),
-      DB.prepare(`SELECT key, value FROM settings WHERE key IN ('bgg_token','tmdb_key','bgg_username')`),
+      DB.prepare(`SELECT key, value FROM settings WHERE key IN ('bgg_token','tmdb_key','bgg_username','watchmode_key','wm_month','wm_count')`),
     ]);
     const c = {};
     for (const r of counts.results) (c[r.type] = c[r.type] || { owned: 0, wishlist: 0 })[r.status] = r.n;
     const s = Object.fromEntries(settings.results.map(r => [r.key, r.value]));
     return ok({
       version: VERSION, user: user.email, types: types.results.map(typeRow), counts: c,
-      settings: { has_bgg_token: !!s.bgg_token, has_tmdb_key: !!s.tmdb_key, bgg_username: s.bgg_username || '' },
+      settings: {
+        has_bgg_token: !!s.bgg_token, has_tmdb_key: !!s.tmdb_key, bgg_username: s.bgg_username || '',
+        has_watchmode_key: !!s.watchmode_key,
+        watchmode_used: s.wm_month === new Date().toISOString().slice(0, 7) ? Number(s.wm_count || 0) : 0,
+        watchmode_budget: WATCHMODE_MONTHLY_BUDGET,
+      },
       field_kinds: FIELD_KINDS, conditions: CONDITIONS, icons: ICONS,
     });
   }
@@ -398,7 +438,7 @@ async function api(request, env, url, user) {
   if (p === '/settings' && m === 'PUT') {
     const b = await body(request);
     const stmts = [];
-    for (const k of ['bgg_token', 'tmdb_key', 'bgg_username']) {
+    for (const k of ['bgg_token', 'tmdb_key', 'bgg_username', 'watchmode_key']) {
       if (k in b) stmts.push(DB.prepare(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
         .bind(k, String(b[k] || '').trim()));
     }
@@ -410,6 +450,7 @@ async function api(request, env, url, user) {
   if ((mm = p.match(/^\/bgg\/([a-z]+)$/)) && m === 'GET') return proxyBgg(env, mm[1], url);
   if (p === '/tmdb' && m === 'GET') return proxyTmdb(env, url);
   if (p === '/archive' && m === 'GET') return proxyArchive(url);
+  if (p === '/watchmode' && m === 'GET') return proxyWatchmode(env, url);
   if ((mm = p.match(/^\/upc\/(\d{6,14})$/)) && m === 'GET') return proxyUpc(mm[1]);
 
   // ---- collection types

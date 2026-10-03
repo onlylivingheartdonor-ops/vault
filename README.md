@@ -76,7 +76,7 @@ Do the steps in order. You'll copy three values along the way: a **database ID**
 
 1. Go to your `workers.dev` address.
 2. Enter your email address, then type the code Cloudflare emails you.
-3. Vault opens. Go to **Settings → Sources** and paste your BoardGameGeek token and TMDB key whenever you have them.
+3. Vault opens. Go to **Settings → Sources** and paste your BoardGameGeek token, TMDB key and Watchmode key whenever you have them. Click **Save**, then **Test connection** on each.
 
 On your phone, open the same address, sign in, and use **Add to Home Screen** so Vault opens like an app. The barcode button uses the phone's camera; allow camera access the first time you use it.
 
@@ -88,7 +88,8 @@ On your phone, open the same address, sign in, and use **Add to Home Screen** so
 - **Staying signed in:** Cloudflare remembers you on each device for a while, then emails a fresh code.
 - **Backups:** **Settings → Backup → Download backup** saves everything (data and images) as one .zip. Keep a copy in OneDrive. **Restore** puts a backup back.
 - **Updates:** when Vault's code changes, open your repository on GitHub and click the **Add file** button. It sits just above the file list, to the left of the green **Code** button. Choose **Upload files**, drag in the updated `public` and `src` folders from your Vault folder, and click **Commit changes**. Files with the same names are replaced. Cloudflare redeploys automatically in a minute or two.
-- **Where to watch:** each movie and TV page shows where it can be streamed free (data from JustWatch via TMDB), and older public-domain films can play right in Vault from the Internet Archive. Vault re-checks each title about once a month in the background. The **Watchlist** status is for free titles you don't own.
+- **Where to watch:** each movie and TV page shows where it can be streamed free, with direct links where Watchmode has them (Pluto TV, Tubi and others) and "with ads" notes from JustWatch via TMDB. Older public-domain films can play right in Vault from the Internet Archive. Under the services, **Check other services yourself** opens a search for the title on Pluto TV, Tubi, The Roku Channel, Plex, Kanopy, Hoopla and YouTube. The **Watchlist** status is for free titles you don't own.
+- **Watchmode's free allowance:** 2,500 credits a month, and each title check uses 2. Vault stops at 2,400 credits, checks a title only when you open its page (at most once a month per title) or click **Check again**, and shows this month's count in **Settings → Sources**. If the allowance runs out, the JustWatch results still show.
 - **Free-tier limits** (100,000 requests a day, 5 GB database, 10 GB images) are far beyond what a personal collection uses.
 
 ## If something goes wrong
@@ -100,4 +101,4 @@ On your phone, open the same address, sign in, and use **Add to Home Screen** so
 
 ## Credits
 
-Board game data is powered by BGG (BoardGameGeek). This product uses the TMDB API but is not endorsed or certified by TMDB. Barcode lookups come from UPCitemdb. Barcode reading uses zxing-wasm (MIT), and zip files use JSZip (MIT). Their license files are in `public/vendor`.
+Board game data is powered by BGG (BoardGameGeek). This product uses the TMDB API but is not endorsed or certified by TMDB. Free-streaming data comes from JustWatch (through TMDB) and Watchmode. Public-domain films come from the Internet Archive. Barcode lookups come from UPCitemdb. Barcode reading uses zxing-wasm (MIT), and zip files use JSZip (MIT). Their license files are in `public/vendor`.

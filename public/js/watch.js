@@ -1,4 +1,5 @@
-// "Where to watch": free streaming availability (TMDB / JustWatch) and public-domain films on the Internet Archive.
+// "Where to watch": free streaming availability from JustWatch (via TMDB) and Watchmode,
+// plus public-domain films on the Internet Archive.
 import { icon } from './icons.js';
 import { api, esc, today, getItems, S, fmtDate } from './util.js';
 
@@ -6,7 +7,7 @@ const LOGO = p => (p ? `https://image.tmdb.org/t/p/w92${p}` : null);
 const RECHECK_DAYS = 30;
 const ARCHIVE_MAX_YEAR = 1980;     // public-domain features are almost all older than this
 
-export const ATTRIBUTION = `Free-streaming information from <a class="ext" href="https://www.justwatch.com" target="_blank" rel="noopener">JustWatch</a>, provided through <a class="ext" href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a>.`;
+export const ATTRIBUTION = `Free-streaming information from <a class="ext" href="https://www.justwatch.com" target="_blank" rel="noopener">JustWatch</a> (provided through <a class="ext" href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDB</a>) and <a class="ext" href="https://www.watchmode.com" target="_blank" rel="noopener">Watchmode</a>.`;
 
 // ---------------------------------------------------------------- lookups
 async function tmdbGet(path) {
@@ -28,8 +29,79 @@ export async function providersFor(type, tmdbId) {
   return { link: us.link || null, free: mapProviders(us.free), ads: mapProviders(us.ads) };
 }
 
+// ---- Watchmode
+async function wmGet(path) {
+  const res = await fetch(`/api/watchmode?${new URLSearchParams({ path })}`, { credentials: 'same-origin' });
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* not JSON */ }
+  if (!res.ok || (data && data.ok === false)) {
+    const err = new Error((data && data.error) || `Watchmode returned an error (${res.status}).`);
+    err.budget = !!(data && data.budget);
+    throw err;
+  }
+  return data;
+}
+
+// Logos for Watchmode's services: fetched once a week and kept in this browser.
+let wmLogoCache = null;
+async function wmLogos() {
+  if (wmLogoCache) return wmLogoCache;
+  try {
+    const saved = JSON.parse(localStorage.getItem('vault:wm-logos') || 'null');
+    if (saved && Date.now() - saved.t < 7 * 86400000) { wmLogoCache = saved.map; return wmLogoCache; }
+  } catch (e) { /* ignore */ }
+  try {
+    const list = await wmGet('/sources/');
+    const map = {};
+    for (const src of list || []) map[src.id] = src.logo_100px || null;
+    wmLogoCache = map;
+    try { localStorage.setItem('vault:wm-logos', JSON.stringify({ t: Date.now(), map })); } catch (e) { /* ignore */ }
+  } catch (e) { wmLogoCache = {}; }
+  return wmLogoCache;
+}
+
+export const hasWatchmode = () => !!(S.settings && S.settings.has_watchmode_key);
+
+// Free services Watchmode lists for a TMDB title, each with a direct web link.
+export async function watchmodeFor(type, tmdbId) {
+  const rows = await wmGet(`/title/${kindOf(type)}-${tmdbId}/sources/`);
+  const logos = await wmLogos();
+  const seen = new Set();
+  const list = [];
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (r.type !== 'free' || (r.region && r.region !== 'US')) continue;
+    if (seen.has(r.source_id)) continue;
+    seen.add(r.source_id);
+    list.push({ id: r.source_id, name: r.name, url: r.web_url || null, logo: logos[r.source_id] || null });
+  }
+  return list;
+}
+
 const norm = t => String(t || '').toLowerCase().replace(/^(the|a|an)\s+/, '').replace(/&/g, 'and')
   .replace(/[^a-z0-9]+/g, ' ').trim();
+
+// "Tubi TV" and "Tubi", "The Roku Channel" and "Roku Channel" are the same service.
+const serviceKey = n => String(n || '').toLowerCase().replace(/^the\s+/, '').replace(/\b(tv|free|channel)\b/g, '')
+  .replace(/[^a-z0-9]+/g, '');
+
+// One combined list of free services from both sources. JustWatch says whether ads are shown;
+// Watchmode supplies the direct links.
+export function mergedServices(w) {
+  if (!w) return [];
+  const out = new Map();
+  const add = (p, extra) => {
+    const k = serviceKey(p.name);
+    const cur = out.get(k) || { name: p.name, logo: null, url: null, ads: false };
+    cur.logo = cur.logo || (p.logo ? (String(p.logo).startsWith('http') ? p.logo : LOGO(p.logo)) : null);
+    cur.url = cur.url || p.url || null;
+    Object.assign(cur, extra);
+    out.set(k, cur);
+  };
+  (w.free || []).forEach(p => add(p, {}));
+  (w.ads || []).forEach(p => add(p, { ads: true }));
+  ((w.wm && w.wm.list) || []).forEach(p => add(p, {}));
+  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
 
 function yearOfDoc(d) {
   const y = Array.isArray(d.year) ? d.year[0] : d.year;
@@ -74,18 +146,33 @@ function wantsArchiveCheck(item) {
 }
 
 // Check one item, save the result into its data.watch, and return it.
-export async function checkItem(item) {
-  const watch = { checked: today(), link: null, free: [], ads: [], archive_candidate: null };
+// JustWatch is checked every time; Watchmode only when asked (its free plan is limited), otherwise
+// the previous Watchmode result is kept.
+export async function checkItem(item, { watchmode = false } = {}) {
+  const prev = item.data.watch || {};
+  const watch = { checked: today(), link: null, free: [], ads: [], archive_candidate: null, wm: prev.wm || null };
   if (item.tmdb_id) {
-    try { Object.assign(watch, await providersFor(item.type, item.tmdb_id)); } catch (e) { watch.error = e.message; }
+    try { Object.assign(watch, await providersFor(item.type, item.tmdb_id)); } catch (e) { /* keep empty */ }
+    if (watchmode && hasWatchmode()) {
+      try { watch.wm = { checked: today(), list: await watchmodeFor(item.type, item.tmdb_id) }; }
+      catch (e) { if (e.budget) watch.wm = prev.wm || null; }
+    }
   }
   if (wantsArchiveCheck(item)) {
     try { watch.archive_candidate = await archiveCandidate(item); } catch (e) { /* skip */ }
   }
-  delete watch.error;
   await api(`/api/items/${item.id}/data`, { method: 'PATCH', body: { watch } });
   item.data.watch = watch;
   return watch;
+}
+
+// Free service names for a title that isn't in Vault yet (used on the Add pages).
+export async function freeNamesFor(type, tmdbId, { watchmode = false } = {}) {
+  const w = await providersFor(type, tmdbId);
+  if (watchmode && hasWatchmode()) {
+    try { w.wm = { list: await watchmodeFor(type, tmdbId) }; } catch (e) { /* skip */ }
+  }
+  return mergedServices(w).map(x => x.name);
 }
 
 export async function setArchive(item, value) {
@@ -99,15 +186,14 @@ export async function setMoviesAnywhereUrl(item, url) {
 }
 
 export function isFreeToWatch(item) {
-  const w = (item.data && item.data.watch) || {};
-  return !!((w.free && w.free.length) || (w.ads && w.ads.length) || (item.data.archive && item.data.archive.id));
+  const w = item.data && item.data.watch;
+  return !!(mergedServices(w).length || (item.data.archive && item.data.archive.id));
 }
 
 export function freeServiceNames(item) {
-  const w = (item.data && item.data.watch) || {};
-  const names = [...(w.free || []), ...(w.ads || [])].map(p => p.name);
+  const names = mergedServices(item.data && item.data.watch).map(p => p.name);
   if (item.data.archive && item.data.archive.id) names.unshift('Internet Archive');
-  return [...new Set(names)];
+  return names;
 }
 
 export const isMoviesAnywhere = item => /movies\s*anywhere/i.test(item.location || '');
@@ -121,19 +207,42 @@ export function moviesAnywhereUrl(item) {
 
 const stale = w => !w || !w.checked || (Date.now() - Date.parse(w.checked)) / 86400000 > RECHECK_DAYS;
 export const needsCheck = item => (item.type === 'movie' || item.type === 'tv') && stale(item.data.watch);
+// Watchmode is asked when a title's page is opened, at most once a month per title.
+export const needsWatchmode = item => hasWatchmode() && !!item.tmdb_id && (item.type === 'movie' || item.type === 'tv')
+  && stale(item.data.watch && item.data.watch.wm);
 
 // ---------------------------------------------------------------- page section
-function providerChips(list) {
-  return list.map(p => `<span class="provider">${p.logo ? `<img src="${esc(LOGO(p.logo))}" alt="" loading="lazy">` : icon('play')}<span>${esc(p.name)}</span></span>`).join('');
+function serviceChips(list, fallbackLink) {
+  return list.map(p => {
+    const href = p.url || fallbackLink;
+    const inner = `${p.logo ? `<img src="${esc(p.logo)}" alt="" loading="lazy">` : icon('play')}<span>${esc(p.name)}${p.ads ? '<small>with ads</small>' : ''}</span>`;
+    return href ? `<a class="provider" href="${esc(href)}" target="_blank" rel="noopener" title="${p.url ? `Open on ${esc(p.name)}` : 'See where to watch'}">${inner}</a>`
+      : `<span class="provider">${inner}</span>`;
+  }).join('');
+}
+
+// Services with no data feed: each link searches that service's own site for this title.
+const SEARCH_SITES = [
+  ['Pluto TV', 'pluto.tv'], ['Tubi', 'tubitv.com'], ['The Roku Channel', 'therokuchannel.roku.com'],
+  ['Plex', 'watch.plex.tv'], ['Kanopy', 'kanopy.com'], ['Hoopla', 'hoopladigital.com'],
+];
+function otherServicesHtml(item) {
+  const q = item.title + (item.data.year ? ` ${item.data.year}` : '');
+  const links = SEARCH_SITES.map(([name, site]) =>
+    `<a class="btn small ghost" target="_blank" rel="noopener" href="https://duckduckgo.com/?q=${encodeURIComponent(`site:${site} ${q}`)}">${esc(name)}</a>`).join('');
+  const yt = `<a class="btn small ghost" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${item.title} full movie`)}">YouTube</a>`;
+  return `<details class="other-services"><summary>Check other services yourself</summary>
+    <p class="muted small">Each opens a search for \u201c${esc(item.title)}\u201d on that service.</p>
+    <div class="btn-row">${links}${yt}</div></details>`;
 }
 
 export function archivePlayer(id, title) {
   return `<div class="ia-player"><iframe src="https://archive.org/embed/${encodeURIComponent(id)}" title="${esc(title || 'Internet Archive player')}"
     allow="fullscreen" allowfullscreen loading="lazy"></iframe></div>
-    <div class="ia-credit">${icon('info')} <span>“${esc(title || id)}” is from the <a class="ext" href="https://archive.org/details/${encodeURIComponent(id)}" target="_blank" rel="noopener">Internet Archive</a>, where it’s offered as a public-domain film.</span></div>`;
+    <div class="ia-credit">${icon('info')} <span>\u201c${esc(title || id)}\u201d is from the <a class="ext" href="https://archive.org/details/${encodeURIComponent(id)}" target="_blank" rel="noopener">Internet Archive</a>, where it\u2019s offered as a public-domain film.</span></div>`;
 }
 
-export function whereToWatchHtml(item) {
+export function whereToWatchHtml(item, { busy = false } = {}) {
   const w = item.data.watch;
   const a = item.data.archive;
   let body = '';
@@ -144,26 +253,24 @@ export function whereToWatchHtml(item) {
     const c = w.archive_candidate;
     body += `<div class="wtw-group ia-confirm"><h4>Possibly free on the Internet Archive</h4>
       <p>The Archive has a public-domain film called <b>${esc(c.title)}</b>${c.year ? ` (${c.year})` : ''}. Is it this one?</p>
-      <div class="btn-row"><button class="btn primary" data-wtw="confirm">${icon('check')} Yes, that’s it</button>
+      <div class="btn-row"><button class="btn primary" data-wtw="confirm">${icon('check')} Yes, that\u2019s it</button>
       <button class="btn" data-wtw="decline">No</button>
       <a class="btn ghost" href="https://archive.org/details/${encodeURIComponent(c.id)}" target="_blank" rel="noopener">${icon('link')} Look at it first</a></div></div>`;
   }
-  if (w && (w.free.length || w.ads.length)) {
-    const go = w.link ? `href="${esc(w.link)}" target="_blank" rel="noopener"` : '';
-    if (w.free.length) body += `<div class="wtw-group"><h4>Free</h4><a class="providers" ${go}>${providerChips(w.free)}</a></div>`;
-    if (w.ads.length) body += `<div class="wtw-group"><h4>Free with ads</h4><a class="providers" ${go}>${providerChips(w.ads)}</a></div>`;
-    if (w.link) body += `<p class="muted small">Click a service to see the links for watching it there.</p>`;
+  const services = mergedServices(w);
+  if (services.length) {
+    body += `<div class="wtw-group"><h4>Free to stream</h4><div class="providers">${serviceChips(services, w.link)}</div></div>`;
   } else if (w && !(a && a.id)) {
-    body += `<p class="muted">Not free to stream anywhere right now.</p>`;
-  } else if (!w) {
-    body += `<p class="muted"><span class="spinner sm inline"></span> Checking…</p>`;
+    body += `<p class="muted">Not listed as free anywhere right now.</p>`;
   }
+  if (!w || busy) body += `<p class="muted"><span class="spinner sm inline"></span> Checking\u2026</p>`;
   const ma = isMoviesAnywhere(item)
     ? `<div class="wtw-group"><h4>Your digital copy</h4><div class="btn-row"><a class="btn" href="${esc(moviesAnywhereUrl(item))}" target="_blank" rel="noopener">${icon('play')} Watch on Movies Anywhere</a>
        <button class="btn small ghost" data-wtw="ma-fix" title="Use a different Movies Anywhere address">${icon('edit')} Fix link</button></div></div>` : '';
+  const sources = hasWatchmode() ? 'JustWatch and Watchmode' : 'JustWatch';
   return `<section class="panel wtw"><div class="panel-head"><h2>Where to watch</h2>
-      ${w ? `<span class="muted">Checked ${fmtDate(w.checked)}</span><button class="btn small" data-wtw="recheck">${icon('refresh')} Check again</button>` : ''}</div>
-    ${ma}${body}
+      ${w ? `<span class="muted" title="Checked with ${sources}">Checked ${fmtDate(w.checked)}</span><button class="btn small" data-wtw="recheck">${icon('refresh')} Check again</button>` : ''}</div>
+    ${ma}${body}${otherServicesHtml(item)}
     <p class="attrib">${ATTRIBUTION}</p></section>`;
 }
 

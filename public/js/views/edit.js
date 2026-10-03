@@ -3,7 +3,7 @@ import { icon } from '../icons.js';
 import { S, api, esc, $, typeOf, coverUrl, toast, busy, namesInput, getItems, invalidate,
   refreshBoot, today, normalizeItem, fieldValue, backdropOf, setCustomCover } from '../util.js';
 import { setTitle, setBackdrop, refreshNav } from '../app.js';
-import { providersFor } from '../watch.js';
+import { freeNamesFor } from '../watch.js';
 
 let pending = null;   // prefill handed over from the Add page
 export function setPrefill(p) { pending = p; }
@@ -154,13 +154,12 @@ export async function renderEdit(ctx, typeKey, id) {
   onStatus();
   // For a new movie or show, show where it can be watched free before saving.
   if (!id && pre && pre.ids && pre.ids.tmdb_id && (t.key === 'movie' || t.key === 'tv')) {
-    providersFor(t.key, pre.ids.tmdb_id).then(w => {
-      const names = [...w.free, ...w.ads].map(x => x.name);
+    freeNamesFor(t.key, pre.ids.tmdb_id, { watchmode: true }).then(names => {
       const host = $('#new-wtw', root);
       if (!host || !names.length || !ctx.isCurrent()) return;
-      host.innerHTML = `<div class="notice">${icon('play')} Free to watch on <b>${esc([...new Set(names)].join(', '))}</b>.
+      host.innerHTML = `<div class="notice">${icon('play')} Free to watch on <b>${esc(names.join(', '))}</b>.
         ${statusSel.value !== 'watchlist' ? 'If you don\u2019t own it, set Status to <b>Watchlist</b> to keep track of it.' : ''}
-        <span class="attrib">Data from JustWatch via TMDB.</span></div>`;
+        <span class="attrib">Data from JustWatch (via TMDB) and Watchmode.</span></div>`;
     }).catch(() => {});
   }
   t.fields.filter(f => f.kind === 'list').forEach(fd => {
