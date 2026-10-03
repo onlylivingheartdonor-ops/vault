@@ -2,6 +2,7 @@
 import { icon } from '../icons.js';
 import { esc, $, $$, getItems, typeOf, store, plainField, thumbUrl, itemYear, debounce, backdropOf } from '../util.js';
 import { setTitle, setBackdrop } from '../app.js';
+import { isFreeToWatch } from '../watch.js';
 import { posterCard, wireHoverBackdrop, emptyState } from './components.js';
 
 const FILTERABLE = ['choice', 'list', 'bool', 'range', 'number'];
@@ -67,6 +68,7 @@ function applyFilters(items, st, t) {
     if (st.status !== 'all' && i.status !== st.status) return false;
     if (text && !(`${i.title} ${i.group_name || ''} ${i.data.edition || ''}`.toLowerCase().includes(text))) return false;
     if (st.f.__loan && !i.on_loan) return false;
+    if (st.f.__free && !isFreeToWatch(i)) return false;
     if (st.f.__unwatched && i.watched) return false;
     if (st.f.__watched && !i.watched) return false;
     if (st.f.__neverplayed && i.play_count) return false;
@@ -107,7 +109,7 @@ function filterPanel(items, st, t) {
   const defs = coreFilterDefs(t);
   const quick = [];
   quick.push(['__loan', 'On loan']);
-  if (t.key === 'movie' || t.key === 'tv') quick.push(['__unwatched', 'Unwatched'], ['__watched', 'Watched']);
+  if (t.key === 'movie' || t.key === 'tv') quick.push(['__free', 'Free to watch'], ['__unwatched', 'Unwatched'], ['__watched', 'Watched']);
   if (t.key === 'boardgame') quick.push(['__played', 'Played'], ['__neverplayed', 'Never played']);
   const quickHtml = quick.map(([k, l]) => `<label class="check"><input type="checkbox" data-q="${k}" ${st.f[k] ? 'checked' : ''}> ${l}</label>`).join('');
   const blocks = defs.map(d => {
@@ -154,8 +156,10 @@ function listView(items, t) {
       const marks = [];
       if (i.on_loan) marks.push(`<span class="tag loan">${icon('handoff')} ${esc(i.on_loan)}</span>`);
       if (i.status === 'wishlist') marks.push(`<span class="tag wish">${icon('heart')} Wishlist</span>`);
+      if (i.status === 'watchlist') marks.push(`<span class="tag watch">${icon('eye')} Watchlist</span>`);
+      if ((i.type === 'movie' || i.type === 'tv') && isFreeToWatch(i)) marks.push('<span class="tag free">Free</span>');
       if (i.play_count) marks.push(`<span class="tag">${i.play_count}× played</span>`);
-      if ((i.type === 'movie' || i.type === 'tv') && i.status === 'owned') marks.push(i.watched ? `<span class="tag">${icon('check')} Watched</span>` : '<span class="tag dim">Unwatched</span>');
+      if ((i.type === 'movie' || i.type === 'tv') && i.status !== 'wishlist') marks.push(i.watched ? `<span class="tag">${icon('check')} Watched</span>` : '<span class="tag dim">Unwatched</span>');
       const bd = backdropOf(i);
       return `<tr data-href="#/item/${i.type}/${i.id}" tabindex="0" data-bd="${esc(bd ? bd.url : '')}" data-soft="${bd && bd.soft ? 1 : 0}">
         <td class="lt">${th ? `<img src="${th}" alt="" loading="lazy">` : ''}</td>
@@ -175,6 +179,8 @@ export async function renderCollection(ctx, typeKey) {
   st.text = '';
   // URL shortcuts from Home ("See all" links)
   if (ctx.params.f === 'unwatched') { st.f = { __unwatched: true }; st.status = 'owned'; }
+  if (ctx.params.f === 'free') { st.f = { __free: true }; st.status = 'all'; }
+  if (ctx.params.status && ['owned', 'wishlist', 'watchlist', 'all'].includes(ctx.params.status)) st.status = ctx.params.status;
   if (ctx.params.sort) st.sort = ctx.params.sort;
   const groupFilter = ctx.params.group || null;
   setTitle(`${icon(t.icon)} ${esc(t.name)}`);
@@ -215,8 +221,10 @@ export async function renderCollection(ctx, typeKey) {
       } else cards = list.map(i => posterCard(i)).join('');
       body = `<div class="wall">${cards}</div>`;
     }
-    const statusSeg = ['owned', 'wishlist', 'all'].map(s =>
-      `<button data-status="${s}" class="${st.status === s ? 'on' : ''}">${s === 'owned' ? 'Owned' : s === 'wishlist' ? 'Wishlist' : 'All'}</button>`).join('');
+    const segs = [['owned', 'Owned'], ['wishlist', 'Wishlist']];
+    if (t.key === 'movie' || t.key === 'tv' || items.some(i => i.status === 'watchlist')) segs.push(['watchlist', 'Watchlist']);
+    segs.push(['all', 'All']);
+    const statusSeg = segs.map(([s, label]) => `<button data-status="${s}" class="${st.status === s ? 'on' : ''}">${label}</button>`).join('');
     ctx.view.innerHTML = `
       <div class="col-head">
         ${groupFilter ? `<a class="back-link" href="#/c/${t.key}">${icon('chevL')} ${esc(t.name)}</a><h1>${esc(groupFilter)}</h1>` : `<h1>${esc(t.name)}</h1>`}

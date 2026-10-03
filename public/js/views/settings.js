@@ -6,6 +6,7 @@ import { testSource } from '../sources/index.js';
 import { importFromBgg } from '../importer.js';
 import { exportCatalog, CORE_EXPORT_FIELDS } from '../exporter.js';
 import { makeBackup, restoreBackup } from '../backup.js';
+import { watchStatus, startWatchChecks, ATTRIBUTION } from '../watch.js';
 
 const TABS = [
   ['general', 'General', 'gear'], ['sources', 'Sources', 'link'], ['collections', 'Collections', 'grid'],
@@ -39,6 +40,10 @@ async function general(body) {
       <div class="lan-url"><code>${esc(location.origin)}</code><button class="btn small" id="copy-url">Copy</button></div>
       <p class="muted">On your phone, use the browser’s “Add to Home Screen” so Vault opens like an app.${b.user ? ` Signed in as <b>${esc(b.user)}</b>.` : ''}</p>
     </section>
+    <section class="panel"><div class="panel-head"><h2>Where to watch</h2><span class="muted" id="wtw-status"></span></div>
+      <p>Vault quietly checks your movies and TV shows for free streaming and public-domain copies, and re-checks each one about once a month, since what\u2019s free changes often. It runs in the background whenever Vault is open.</p>
+      <div class="btn-row"><button class="btn" id="wtw-run">${icon('refresh')} Check now</button></div>
+    </section>
     <section class="panel"><div class="panel-head"><h2>Your data</h2></div>
       <p>Your collection is stored in your Cloudflare account. For an extra copy you control, use <a class="ext" href="#/settings/backup">Backup</a> and save the file to OneDrive.</p>
     </section>`;
@@ -46,6 +51,15 @@ async function general(body) {
     setThemeMode(btn.dataset.themeOpt);
     $$('[data-theme-opt]', body).forEach(x => x.classList.toggle('on', x === btn));
   });
+  const showWtw = () => {
+    const el = $('#wtw-status', body);
+    if (!el) { document.removeEventListener('vault-watch-progress', showWtw); return; }
+    el.textContent = watchStatus.running ? `Checking: ${watchStatus.done} of ${watchStatus.total}`
+      : watchStatus.total ? `Last run checked ${watchStatus.done} titles` : 'Up to date';
+  };
+  showWtw();
+  document.addEventListener('vault-watch-progress', showWtw);
+  $('#wtw-run', body).onclick = () => { startWatchChecks().catch(e => toast(e.message, 'error')); setTimeout(showWtw, 300); };
   $('#copy-url', body).onclick = async () => {
     try { await navigator.clipboard.writeText(location.origin); toast('Copied.', 'ok'); } catch (e) { toast(location.origin); }
   };
@@ -278,7 +292,7 @@ async function exportTab(body, ctx) {
         ${req && req.type === typeKey ? `<div class="notice">${icon('filter')} Exporting your current view: <b>${req.ids.length}</b> items from ${esc(req.label)}. <a href="#/settings/export">Export everything instead</a></div>` : ''}
         <div class="pair">
           <label class="fld"><span>Collection</span><select id="ex_type" ${req ? 'disabled' : ''}>${S.types.map(x => `<option value="${x.key}" ${x.key === typeKey ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
-          ${req ? '' : `<label class="fld"><span>Include</span><select id="ex_scope"><option value="owned">Owned (${owned})</option><option value="wishlist">Wishlist (${items.length - owned})</option><option value="all">Everything (${items.length})</option></select></label>`}
+          ${req ? '' : `<label class="fld"><span>Include</span><select id="ex_scope"><option value="owned">Owned (${owned})</option><option value="wishlist">Wishlist (${items.filter(i => i.status === 'wishlist').length})</option>${items.some(i => i.status === 'watchlist') ? `<option value="watchlist">Watchlist (${items.filter(i => i.status === 'watchlist').length})</option>` : ''}<option value="all">Everything (${items.length})</option></select></label>`}
         </div>
         <div class="pair">
           <label class="fld"><span>Catalog title</span><input id="ex_title" value="${esc(req ? req.label : `${t.name} Collection`)}"></label>
@@ -367,6 +381,8 @@ async function about(body) {
       <ul class="plain">
         <li><b>Powered by BGG.</b> Board game information comes from <a class="ext" href="https://boardgamegeek.com" target="_blank" rel="noopener">BoardGameGeek</a>.</li>
         <li><b>TMDB.</b> This product uses the TMDB API but is not endorsed or certified by TMDB. Movie and TV information and images come from <a class="ext" href="https://www.themoviedb.org" target="_blank" rel="noopener">The Movie Database</a>.</li>
+        <li><b>Where to watch.</b> ${ATTRIBUTION}</li>
+        <li><b>Internet Archive.</b> Public-domain films play from the <a class="ext" href="https://archive.org" target="_blank" rel="noopener">Internet Archive</a>, and each one links back to its page there.</li>
         <li><b>IMDb</b> links are provided for reference. No data is taken from IMDb.</li>
         <li><b>Barcode lookups</b> come from <a class="ext" href="https://www.upcitemdb.com" target="_blank" rel="noopener">UPCitemdb</a>. Barcode reading uses <a class="ext" href="https://github.com/Sec-ant/zxing-wasm" target="_blank" rel="noopener">zxing-wasm</a>; zip files use <a class="ext" href="https://stuk.github.io/jszip/" target="_blank" rel="noopener">JSZip</a>.</li>
       </ul>

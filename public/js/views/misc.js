@@ -127,3 +127,28 @@ export async function renderWishlist(ctx) {
   ctx.view.innerHTML = html;
   wireHoverBackdrop(ctx.view, null);
 }
+
+export async function renderWatchlist(ctx) {
+  setTitle(`${icon('eye')} Watchlist`);
+  setBackdrop(null);
+  ctx.view.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const all = await getAllItems();
+  if (!ctx.isCurrent()) return;
+  const list = all.filter(i => i.status === 'watchlist');
+  if (!list.length) {
+    ctx.view.innerHTML = emptyState('Your watchlist is empty',
+      'Movies and shows you don’t own but can watch free online. Search for a title, and if it’s free somewhere, save it with the Watchlist status.',
+      `<div class="btn-row center"><a class="btn primary" href="#/add?type=movie&status=watchlist">${icon('plus')} Find a free movie</a></div>`);
+    return;
+  }
+  let html = `<div class="col-head"><h1>Watchlist</h1><span class="count">${list.length} items</span>
+    <a class="btn small" href="#/add?type=movie&status=watchlist">${icon('plus')} Add to watchlist</a></div>`;
+  for (const t of S.types) {
+    const items = list.filter(i => i.type === t.key).sort((a, b) => (a.sort_title || '').localeCompare(b.sort_title || ''));
+    if (!items.length) continue;
+    html += `<section class="result-group"><h2>${icon(t.icon)} ${esc(t.name)} <span class="count">${items.length}</span></h2>
+      <div class="wall">${items.map(i => posterCard(i)).join('')}</div></section>`;
+  }
+  ctx.view.innerHTML = html;
+  wireHoverBackdrop(ctx.view, null);
+}

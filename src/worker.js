@@ -4,7 +4,7 @@
 // stays thin — it stores data, proxies BGG/TMDB/UPC calls (adding the keys), and moves
 // image bytes. Parsing and mapping of source data happens in the browser.
 
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 const SCHEMA_VERSION = '1';
 
 // ---------------------------------------------------------------- defaults
@@ -112,6 +112,7 @@ const SCHEMA = [
 const ITEM_COLUMNS = ['type', 'status', 'title', 'group_name', 'condition', 'location', 'purchase_date', 'purchase_price',
   'acquired_from', 'my_rating', 'tags', 'notes', 'barcode', 'bgg_id', 'version_id', 'tmdb_id', 'imdb_id',
   'cover', 'cover_custom', 'backdrop', 'date_added', 'data', 'text'];
+const STATUSES = ['owned', 'wishlist', 'watchlist'];
 const LIST_COLUMNS = 'id,type,status,title,sort_title,group_name,condition,location,purchase_date,purchase_price,' +
   'acquired_from,my_rating,tags,notes,barcode,date_added,updated,bgg_id,version_id,tmdb_id,imdb_id,cover,cover_custom,backdrop,data';
 const TABLES = ['settings', 'types', 'items', 'photos', 'loans', 'plays', 'watches'];
@@ -241,6 +242,7 @@ function cleanItemValues(b) {
   if ('my_rating' in v) v.my_rating = v.my_rating === '' || v.my_rating == null ? null : Number(v.my_rating);
   for (const k of ['bgg_id', 'version_id', 'tmdb_id']) if (k in v && (v[k] === '' || v[k] == null)) v[k] = null;
   if ('cover_custom' in v) v.cover_custom = v.cover_custom ? 1 : 0;
+  if ('status' in v && !STATUSES.includes(v.status)) v.status = 'owned';
   if ('title' in v) { v.title = String(v.title || 'Untitled').trim() || 'Untitled'; v.sort_title = sortTitle(v.title); }
   return v;
 }
@@ -321,7 +323,9 @@ async function proxyTmdb(env, url) {
   const key = ((await getSetting(env, 'tmdb_key')) || '').trim();
   if (!key) return fail('TMDB needs an API key. Add it in Settings → Sources.', 502, { source: 'tmdb' });
   const path = url.searchParams.get('path') || '';
-  if (!/^\/(search\/(movie|tv)|movie\/\d+|tv\/\d+|configuration)$/.test(path)) throw new HttpError('Unknown TMDB request.');
+  if (!/^\/(search\/(movie|tv)|movie\/\d+|tv\/\d+|movie\/\d+\/watch\/providers|tv\/\d+\/watch\/providers|configuration)$/.test(path)) {
+    throw new HttpError('Unknown TMDB request.');
+  }
   const target = new URL(`https://api.themoviedb.org/3${path}`);
   url.searchParams.forEach((v, k) => { if (k !== 'path') target.searchParams.set(k, v); });
   const headers = { Accept: 'application/json' };
@@ -332,6 +336,26 @@ async function proxyTmdb(env, url) {
   if (r.status === 404) return fail('TMDB doesn’t have that title.', 404);
   if (r.status === 429) return fail('TMDB is busy. Wait a moment and try again.', 429);
   if (!r.ok) return fail(`TMDB returned an error (${r.status}).`, 502);
+  return new Response(r.body, { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+}
+
+// Internet Archive search, limited to its curated public-domain film and TV collections.
+const ARCHIVE_COLLECTIONS = { movie: ['feature_films', 'film_noir', 'SciFi_Horror', 'silent_films'], tv: ['classic_tv'] };
+
+async function proxyArchive(url) {
+  const title = String(url.searchParams.get('title') || '').replace(/["\\()\[\]{}:^~*?!+\-&|\/]/g, ' ').replace(/\b(AND|OR|NOT)\b/g, ' ').trim().slice(0, 120);
+  const kind = url.searchParams.get('kind') === 'tv' ? 'tv' : 'movie';
+  if (!title) throw new HttpError('No title.');
+  const cols = ARCHIVE_COLLECTIONS[kind].map(c => `collection:${c}`).join(' OR ');
+  const q = `title:(${title}) AND mediatype:movies AND (${cols})`;
+  const target = new URL('https://archive.org/advancedsearch.php');
+  target.searchParams.set('q', q);
+  for (const fl of ['identifier', 'title', 'year', 'date', 'downloads']) target.searchParams.append('fl[]', fl);
+  target.searchParams.set('rows', '12');
+  target.searchParams.set('sort[]', 'downloads desc');
+  target.searchParams.set('output', 'json');
+  const r = await fetch(target.toString(), { headers: { 'User-Agent': 'Vault/2.1 (personal collection catalog)', Accept: 'application/json' } });
+  if (!r.ok) return fail(`The Internet Archive returned an error (${r.status}).`, 502);
   return new Response(r.body, { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
 
@@ -385,6 +409,7 @@ async function api(request, env, url, user) {
   // ---- source proxies
   if ((mm = p.match(/^\/bgg\/([a-z]+)$/)) && m === 'GET') return proxyBgg(env, mm[1], url);
   if (p === '/tmdb' && m === 'GET') return proxyTmdb(env, url);
+  if (p === '/archive' && m === 'GET') return proxyArchive(url);
   if ((mm = p.match(/^\/upc\/(\d{6,14})$/)) && m === 'GET') return proxyUpc(mm[1]);
 
   // ---- collection types
@@ -462,7 +487,7 @@ async function api(request, env, url, user) {
     const v = cleanItemValues(b);
     v.date_added = v.date_added || now();
     v.updated = now();
-    v.status = v.status === 'wishlist' ? 'wishlist' : 'owned';
+    v.status = STATUSES.includes(v.status) ? v.status : 'owned';
     if (!v.title) { v.title = 'Untitled'; v.sort_title = 'untitled'; }
     const keys = Object.keys(v);
     const r = await DB.prepare(`INSERT INTO items(${keys.join(',')}) VALUES(${keys.map(() => '?').join(',')}) RETURNING id`)
@@ -522,6 +547,21 @@ async function api(request, env, url, user) {
       ]);
       return ok();
     }
+  }
+
+  // Merge a few machine-maintained keys into items.data server-side, so background checks
+  // never overwrite edits made elsewhere at the same time.
+  if ((mm = p.match(/^\/items\/(\d+)\/data$/)) && m === 'PATCH') {
+    const b = await body(request);
+    const allowed = ['watch', 'archive', 'ma_url'];
+    const stmts = [];
+    for (const k of allowed) {
+      if (!(k in b)) continue;
+      stmts.push(DB.prepare(`UPDATE items SET data = json_set(COALESCE(data,'{}'), '$.${k}', json(?)) WHERE id=?`)
+        .bind(JSON.stringify(b[k] ?? null), Number(mm[1])));
+    }
+    if (stmts.length) await DB.batch(stmts);
+    return ok();
   }
 
   if ((mm = p.match(/^\/items\/(\d+)\/media$/)) && m === 'POST') {

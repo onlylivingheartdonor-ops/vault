@@ -4,13 +4,15 @@ import { S, esc, $, $$, typeOf, toast, busy, modal } from '../util.js';
 import { setTitle, setBackdrop, scanBarcode } from '../app.js';
 import { setPrefill } from './edit.js';
 import { SOURCE_NAMES, lookupSearch, lookupDetails, versions as bggVersions } from '../sources/index.js';
+import { providersFor } from '../watch.js';
 
 function resultCard(r) {
   return `<button class="result" data-id="${r.id}">
     <span class="r-thumb">${r.thumb ? `<img src="${esc(r.thumb)}" alt="" loading="lazy">` : icon('image')}</span>
     <span class="r-text"><b>${esc(r.title)}</b>
       <small>${[r.year, r.subtitle].filter(Boolean).map(esc).join(' · ')}</small>
-      ${r.badge ? `<em class="r-badge">${esc(r.badge)}</em>` : ''}${r.language ? `<small>${esc(r.language)}</small>` : ''}</span>
+      ${r.badge ? `<em class="r-badge">${esc(r.badge)}</em>` : ''}${r.language ? `<small>${esc(r.language)}</small>` : ''}
+      <small class="r-free" data-free="${r.id}"></small></span>
   </button>`;
 }
 
@@ -37,20 +39,21 @@ export async function renderAdd(ctx) {
   const p = ctx.params;
   const typeKey = p.type && typeOf(p.type) ? p.type : (S.types[0] && S.types[0].key);
   const t = typeOf(typeKey);
-  const status = p.status === 'wishlist' ? 'wishlist' : 'owned';
+  const status = ['wishlist', 'watchlist'].includes(p.status) ? p.status : 'owned';
+  const keepStatus = status !== 'owned' ? { status } : {};
   const barcode = p.barcode || '';
-  setTitle(`${icon('plus')} Add${status === 'wishlist' ? ' to wishlist' : ''}`);
+  setTitle(`${icon('plus')} Add${status === 'wishlist' ? ' to wishlist' : status === 'watchlist' ? ' to watchlist' : ''}`);
   setBackdrop(null);
   const hasKey = t.source === 'bgg' ? S.settings.has_bgg_token : (t.source.startsWith('tmdb') ? S.settings.has_tmdb_key : true);
   const srcName = SOURCE_NAMES[t.source];
   const qs = (extra = {}) => {
-    const o = { type: typeKey, ...(status === 'wishlist' ? { status } : {}), ...(barcode ? { barcode } : {}), ...extra };
+    const o = { type: typeKey, ...keepStatus, ...(barcode ? { barcode } : {}), ...extra };
     return new URLSearchParams(o).toString();
   };
 
   ctx.view.innerHTML = `
     <div class="add-page">
-      <div class="type-tabs">${S.types.map(x => `<a href="#/add?${new URLSearchParams({ type: x.key, ...(status === 'wishlist' ? { status } : {}) })}" class="${x.key === typeKey ? 'on' : ''}">${icon(x.icon)} ${esc(x.name)}</a>`).join('')}</div>
+      <div class="type-tabs">${S.types.map(x => `<a href="#/add?${new URLSearchParams({ type: x.key, ...keepStatus })}" class="${x.key === typeKey ? 'on' : ''}">${icon(x.icon)} ${esc(x.name)}</a>`).join('')}</div>
       ${barcode ? `<div class="notice">${icon('scan')} Barcode <b>${esc(barcode)}</b> will be saved with the item you pick.</div>` : ''}
       ${srcName ? `
         ${!hasKey ? `<div class="notice warn">${icon('info')} ${srcName} isn’t connected yet. <a href="#/settings/sources">Add the key in Settings</a>, or enter this item manually.</div>` : ''}
@@ -83,6 +86,25 @@ export async function renderAdd(ctx) {
     } catch (e) { toast(e.message, 'error'); }
     finally { done(); }
   };
+  // Show which results can be watched free, a few at a time so the list appears first.
+  const markFree = async results => {
+    for (let i = 0; i < results.length; i += 4) {
+      await Promise.all(results.slice(i, i + 4).map(async res => {
+        const el = resBox.querySelector(`[data-free="${res.id}"]`);
+        if (!el || el.dataset.done) return;
+        el.dataset.done = '1';
+        try {
+          const w = await providersFor(typeKey, res.id);
+          const names = [...new Set([...w.free, ...w.ads].map(x => x.name))];
+          if (names.length && ctx.isCurrent()) el.innerHTML = `${icon('play')} Free: ${esc(names.slice(0, 3).join(', '))}${names.length > 3 ? '\u2026' : ''}`;
+        } catch (e) { /* skip */ }
+      }));
+      if (!ctx.isCurrent()) return;
+    }
+    if (results.length && !resBox.querySelector('.attrib')) {
+      resBox.insertAdjacentHTML('beforeend', '<p class="attrib">Free-streaming information from JustWatch, provided through TMDB.</p>');
+    }
+  };
   const run = async (more = false) => {
     if (!more) { page = 1; query = $('#add-q', ctx.view).value.trim(); }
     if (!query) return;
@@ -103,6 +125,7 @@ export async function renderAdd(ctx) {
       $('#more-btn', resBox)?.remove();
       if (r.has_more) resBox.insertAdjacentHTML('beforeend', '<div class="center"><button class="btn" id="more-btn">More results</button></div>');
       $$('.result', resBox).forEach(b => b.onclick = () => pick(b.dataset.id, b.querySelector('b').textContent));
+      if (typeKey === 'movie' || typeKey === 'tv') markFree(r.results);
       const mb = $('#more-btn', resBox);
       if (mb) mb.onclick = () => { page += 1; run(true); };
     } catch (e) {
@@ -111,7 +134,7 @@ export async function renderAdd(ctx) {
     }
   };
   $('#add-form', ctx.view).onsubmit = e => { e.preventDefault(); history.replaceState(null, '', `#/add?${qs({ q: $('#add-q', ctx.view).value.trim() })}`); run(); };
-  $('#add-scan', ctx.view).onclick = () => scanBarcode({ type: typeKey, status: status === 'wishlist' ? 'wishlist' : null });
+  $('#add-scan', ctx.view).onclick = () => scanBarcode({ type: typeKey, status: status === 'owned' ? null : status });
   if (p.q) run();
   else if (window.matchMedia('(pointer:fine)').matches) $('#add-q', ctx.view).focus();
 }

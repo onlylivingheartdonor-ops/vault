@@ -87,7 +87,8 @@ On your phone, open the same address, sign in, and use **Add to Home Screen** so
 - **Nothing to install anywhere.** Any computer or phone with a browser works.
 - **Staying signed in:** Cloudflare remembers you on each device for a while, then emails a fresh code.
 - **Backups:** **Settings → Backup → Download backup** saves everything (data and images) as one .zip. Keep a copy in OneDrive. **Restore** puts a backup back.
-- **Updates:** when Vault's code changes, replace the files in the GitHub repository (upload the changed files, or edit them on GitHub). Cloudflare redeploys automatically.
+- **Updates:** when Vault's code changes, open your repository on GitHub and click the **Add file** button. It sits just above the file list, to the left of the green **Code** button. Choose **Upload files**, drag in the updated `public` and `src` folders from your Vault folder, and click **Commit changes**. Files with the same names are replaced. Cloudflare redeploys automatically in a minute or two.
+- **Where to watch:** each movie and TV page shows where it can be streamed free (data from JustWatch via TMDB), and older public-domain films can play right in Vault from the Internet Archive. Vault re-checks each title about once a month in the background. The **Watchlist** status is for free titles you don't own.
 - **Free-tier limits** (100,000 requests a day, 5 GB database, 10 GB images) are far beyond what a personal collection uses.
 
 ## If something goes wrong

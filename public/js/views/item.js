@@ -5,6 +5,9 @@ import { api, esc, $$, typeOf, coverUrl, backdropOf, fmtField, fieldValue, fmtDa
   setCustomCover, addPhotos } from '../util.js';
 import { setTitle, setBackdrop, refreshNav } from '../app.js';
 import { refreshItem } from '../sources/index.js';
+import { whereToWatchHtml, needsCheck, checkItem, setArchive, setMoviesAnywhereUrl, archivePlayer } from '../watch.js';
+
+const STATUS_LABEL = { owned: 'Owned', wishlist: 'Wishlist', watchlist: 'Watchlist (free online)' };
 
 // Assemble the full item from the API reply, plus links and expansion info from the cached lists.
 async function loadItem(id) {
@@ -80,7 +83,7 @@ function detailRows(it, t) {
 function copyRows(it) {
   const rows = [];
   const add = (l, v) => { if (v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length)) rows.push([l, v]); };
-  add('Status', it.status === 'wishlist' ? 'Wishlist' : 'Owned');
+  add('Status', STATUS_LABEL[it.status] || 'Owned');
   add('Group', it.group_name ? `<a class="ext" href="#/c/${it.type}?group=${encodeURIComponent(it.group_name)}">${esc(it.group_name)}</a>` : '');
   add('Condition', esc(it.condition || ''));
   add('Location', esc(it.location || ''));
@@ -193,9 +196,12 @@ export async function renderItem(ctx, typeKey, id) {
   const activeLoan = (it.loans || []).find(l => !l.returned);
 
   const actions = [];
+  const archived = it.data.archive && it.data.archive.id;
+  if (archived) actions.push(`<button class="btn primary" data-act="ia-play">${icon('play')} Play</button>`);
   if (it.status === 'wishlist') actions.push(`<button class="btn primary" data-act="gotit">${icon('check')} Got it</button>`);
+  if (it.status === 'watchlist') actions.push(`<button class="btn" data-act="gotit" title="Move it to your owned collection">${icon('check')} I own it now</button>`);
   if (it.type === 'boardgame' && it.status === 'owned') actions.push(`<button class="btn primary" data-act="play">${icon('play')} Log play</button>`);
-  if (it.type === 'movie' && it.status === 'owned') actions.push(`<button class="btn ${it.watched ? '' : 'primary'}" data-act="watch">${icon('eye')} ${it.watched ? 'Watched again' : 'Mark watched'}</button>`);
+  if (it.type === 'movie' && it.status !== 'wishlist') actions.push(`<button class="btn ${it.watched ? '' : 'primary'}" data-act="watch">${icon('eye')} ${it.watched ? 'Watched again' : 'Mark watched'}</button>`);
   if (it.status === 'owned') actions.push(activeLoan
     ? `<button class="btn" data-act="return">${icon('check')} Mark returned</button>`
     : `<button class="btn" data-act="lend">${icon('handoff')} Lend</button>`);
@@ -215,7 +221,7 @@ export async function renderItem(ctx, typeKey, id) {
         <span class="row-acts"><button class="icon-btn sm" data-editplay="${p.id}" title="Edit">${icon('edit')}</button><button class="icon-btn sm" data-delplay="${p.id}" title="Delete">${icon('trash')}</button></span></li>`).join('')}</ul>` : ''}
     </section>`;
   }
-  if (it.type === 'tv' && it.status === 'owned') {
+  if (it.type === 'tv' && it.status !== 'wishlist') {
     const seasons = seasonCount(it);
     const watched = new Set(it.seasons_watched || []);
     extras += `<section class="panel"><div class="panel-head"><h2>Seasons watched</h2><span class="muted">Tap a season to mark it watched</span></div>
@@ -247,13 +253,14 @@ export async function renderItem(ctx, typeKey, id) {
         <button class="btn small ghost" data-act="cover">${icon('image')} Replace cover</button>
       </div>
       <div class="item-main">
-        <div class="eyebrow">${icon(type.icon)} ${esc(type.name)}${it.status === 'wishlist' ? ' · <span class="wish-tag">Wishlist</span>' : ''}</div>
+        <div class="eyebrow">${icon(type.icon)} ${esc(type.name)}${it.status === 'wishlist' ? ' · <span class="wish-tag">Wishlist</span>' : ''}${it.status === 'watchlist' ? ' · <span class="watch-tag">Watchlist</span>' : ''}</div>
         <h1>${esc(it.title)}</h1>
         <div class="item-sub">${esc(itemSubtitle(it))}</div>
         <div class="chips">${chips(it)}</div>
         ${activeLoan ? `<div class="notice">${icon('handoff')} On loan to <b>${esc(activeLoan.borrower)}</b> since ${fmtDate(activeLoan.date_lent)}${activeLoan.due ? `, due ${fmtDate(activeLoan.due)}` : ''}</div>` : ''}
         <div class="btn-row">${actions.join('')}</div>
         ${links ? `<div class="btn-row links">${links}</div>` : ''}
+        ${it.type === 'movie' || it.type === 'tv' ? '<div id="wtw-host"></div>' : ''}
         ${longs.map(f => `<div class="about"><h3>${esc(f.label)}</h3>${fmtField(f, fieldValue(it, f))}</div>`).join('')}
         ${it.notes ? `<div class="about"><h3>My notes</h3><div class="prose">${esc(it.notes)}</div></div>` : ''}
       </div>
@@ -268,6 +275,50 @@ export async function renderItem(ctx, typeKey, id) {
   const reload = async () => { invalidate(it.type); await refreshBoot(); refreshNav(); renderItem(ctx, typeKey, id); };
   const v = ctx.view;
   const on = (sel, fn) => $$(sel, v).forEach(b => b.onclick = async () => { try { await fn(b); } catch (e) { toast(e.message, 'error'); } });
+
+  // ---- Where to watch
+  const host = v.querySelector('#wtw-host');
+  const drawWtw = () => {
+    if (!host || !ctx.isCurrent()) return;
+    host.innerHTML = whereToWatchHtml(it);
+    const wire = (sel, fn) => $$(sel, host).forEach(b => b.onclick = async () => { try { await fn(b); } catch (e) { toast(e.message, 'error'); } });
+    wire('[data-wtw=recheck]', async b => { b.disabled = true; await checkItem(it); invalidate(it.type); drawWtw(); });
+    wire('[data-wtw=confirm]', async () => {
+      const c = it.data.watch.archive_candidate;
+      await setArchive(it, { id: c.id, title: c.title, year: c.year || null });
+      invalidate(it.type);
+      toast('Linked to the Internet Archive.', 'ok');
+      reload();
+    });
+    wire('[data-wtw=decline]', async () => { await setArchive(it, false); invalidate(it.type); drawWtw(); });
+    wire('[data-wtw=unlink]', async () => {
+      if (!await confirmBox('Unlink film', 'Remove the Internet Archive film from this item? You can check again later.', 'Unlink')) return;
+      await setArchive(it, false); invalidate(it.type); reload();
+    });
+    wire('[data-wtw=ma-fix]', async () => {
+      const url = await modal({
+        title: 'Movies Anywhere link',
+        body: `<p class="muted">Vault guesses the address from the title. If it opens the wrong page, find the movie on Movies Anywhere and paste its address here.</p>
+          <label class="fld"><span>Address</span><input id="ma_url" value="${esc(it.data.ma_url || '')}" placeholder="https://moviesanywhere.com/movie/..."></label>`,
+        actions: [{ label: 'Cancel', value: null }, { label: 'Save', kind: 'primary', handler: root => {
+          const val = root.querySelector('#ma_url').value.trim();
+          if (val && !/^https:\/\/(www\.)?moviesanywhere\.com\//.test(val)) { toast('That isn\u2019t a Movies Anywhere address.', 'warn'); return false; }
+          return val || '';
+        } }],
+      });
+      if (url === null || url === true) return;
+      await setMoviesAnywhereUrl(it, url);
+      invalidate(it.type);
+      drawWtw();
+    });
+  };
+  if (host) {
+    drawWtw();
+    if (needsCheck(it)) checkItem(it).then(() => { invalidate(it.type); drawWtw(); }).catch(() => {});
+  }
+  on('[data-act=ia-play]', async () => {
+    await modal({ title: it.title, wide: true, cls: 'player-modal', body: archivePlayer(it.data.archive.id, it.data.archive.title) });
+  });
 
   on('[data-act=play]', async () => { if (await playDialog(it)) { toast('Play logged.', 'ok'); reload(); } });
   on('[data-act=watch]', async () => { if (await watchDialog(it)) { toast('Marked watched.', 'ok'); reload(); } });

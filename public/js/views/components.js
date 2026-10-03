@@ -2,6 +2,7 @@
 import { icon } from '../icons.js';
 import { esc, thumbUrl, backdropOf, itemSubtitle, typeOf, $$ } from '../util.js';
 import { setBackdrop } from '../app.js';
+import { isFreeToWatch } from '../watch.js';
 
 export function posterCard(it, { showType = false, stackCount = 0, href = null } = {}) {
   const t = typeOf(it.type);
@@ -9,7 +10,9 @@ export function posterCard(it, { showType = false, stackCount = 0, href = null }
   const badges = [];
   if (it.on_loan) badges.push(`<span class="badge loan" title="On loan to ${esc(it.on_loan)}">${icon('handoff')}</span>`);
   if (it.status === 'wishlist') badges.push(`<span class="badge wish" title="Wishlist">${icon('heart')}</span>`);
-  if ((it.type === 'movie' || it.type === 'tv') && it.status === 'owned' && !it.watched) badges.push('<span class="badge dot" title="Unwatched"></span>');
+  if (it.status === 'watchlist') badges.push(`<span class="badge watch" title="Watchlist (free online)">${icon('eye')}</span>`);
+  if ((it.type === 'movie' || it.type === 'tv') && isFreeToWatch(it)) badges.push('<span class="badge free" title="Free to watch">FREE</span>');
+  if ((it.type === 'movie' || it.type === 'tv') && it.status !== 'wishlist' && !it.watched) badges.push('<span class="badge dot" title="Unwatched"></span>');
   const plays = it.play_count ? `<span class="badge plays" title="${it.play_count} plays">${it.play_count}×</span>` : '';
   const sub = showType && t ? t.name : itemSubtitle(it);
   const link = href || `#/item/${it.type}/${it.id}`;

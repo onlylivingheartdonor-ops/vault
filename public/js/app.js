@@ -8,7 +8,8 @@ import { renderItem } from './views/item.js';
 import { renderEdit } from './views/edit.js';
 import { renderAdd } from './views/add.js';
 import { renderSettings } from './views/settings.js';
-import { renderSearch, renderLoans, renderWishlist, searchItems, renderSetup } from './views/misc.js';
+import { renderSearch, renderLoans, renderWishlist, renderWatchlist, searchItems, renderSetup } from './views/misc.js';
+import { startWatchChecks } from './watch.js';
 
 export { scanBarcode };
 
@@ -70,6 +71,7 @@ function navHtml() {
     ${types}
     <div class="nav-sep"></div>
     <a href="#/wishlist" data-nav="wishlist">${icon('heart')}<span>Wishlist</span></a>
+    <a href="#/watchlist" data-nav="watchlist">${icon('eye')}<span>Watchlist</span></a>
     <a href="#/loans" data-nav="loans">${icon('handoff')}<span>On Loan</span></a>
     <div class="nav-grow"></div>
     <a href="#/settings" data-nav="settings">${icon('gear')}<span>Settings</span></a>`;
@@ -124,7 +126,8 @@ function buildShell() {
   $('#nav').addEventListener('click', e => { if (e.target.closest('a')) document.body.classList.remove('nav-open'); });
   $('#scan-btn').onclick = () => {
     const m = location.hash.match(/^#\/(?:c|item)\/([a-z0-9_]+)/) || location.hash.match(/[?&]type=([a-z0-9_]+)/);
-    scanBarcode({ type: m && typeOf(m[1]) ? m[1] : null, status: location.hash.startsWith('#/wishlist') ? 'wishlist' : null });
+    const status = location.hash.startsWith('#/wishlist') ? 'wishlist' : location.hash.startsWith('#/watchlist') ? 'watchlist' : null;
+    scanBarcode({ type: m && typeOf(m[1]) ? m[1] : null, status });
   };
   $('#add-btn').addEventListener('click', e => {
     // Add into the collection currently being viewed.
@@ -132,6 +135,7 @@ function buildShell() {
     const cur = m && typeOf(m[1]) ? m[1] : null;
     if (cur) { e.preventDefault(); location.hash = `#/add?type=${cur}`; }
     if (location.hash.startsWith('#/wishlist')) { e.preventDefault(); location.hash = '#/add?status=wishlist'; }
+    if (location.hash.startsWith('#/watchlist')) { e.preventDefault(); location.hash = '#/add?type=movie&status=watchlist'; }
   });
   setupGlobalSearch();
   const tick = () => {
@@ -214,6 +218,7 @@ async function route() {
       case 'search': await renderSearch(ctx); break;
       case 'loans': await renderLoans(ctx); break;
       case 'wishlist': await renderWishlist(ctx); break;
+      case 'watchlist': await renderWatchlist(ctx); break;
       default: location.hash = '#/home';
     }
   } catch (e) {
@@ -237,6 +242,8 @@ async function start() {
   refreshNav();
   window.addEventListener('hashchange', route);
   route();
+  // Quietly keep "where to watch" information up to date in the background.
+  setTimeout(() => { startWatchChecks().catch(() => {}); }, 5000);
 }
 
 start();

@@ -3,6 +3,7 @@ import { icon } from '../icons.js';
 import { S, api, esc, getAllItems, backdropOf, coverUrl, itemSubtitle, typeOf } from '../util.js';
 import { setTitle, setBackdrop } from '../app.js';
 import { row, wireShelves, wireHoverBackdrop, emptyState } from './components.js';
+import { isFreeToWatch } from '../watch.js';
 
 export async function renderHome(ctx) {
   setTitle('Home');
@@ -36,6 +37,11 @@ export async function renderHome(ctx) {
   }
   const unwatched = owned.filter(i => i.type === 'movie' && !i.watched).sort(byAdded).slice(0, 24);
   shelves += row('Unwatched movies', unwatched, { more: '#/c/movie?f=unwatched' });
+  const freeNow = all.filter(i => (i.type === 'movie' || i.type === 'tv') && i.status !== 'wishlist' && isFreeToWatch(i))
+    .sort((a, b) => (a.watched ? 1 : 0) - (b.watched ? 1 : 0) || (b.date_added || '').localeCompare(a.date_added || '')).slice(0, 24);
+  shelves += row('Free to watch', freeNow, { more: '#/c/movie?f=free' });
+  const watchlist = all.filter(i => i.status === 'watchlist').sort(byAdded).slice(0, 24);
+  shelves += row('Watchlist', watchlist, { more: '#/watchlist', showType: true });
   const tvOpen = owned.filter(i => i.type === 'tv' && !i.watched).sort(byAdded).slice(0, 24);
   shelves += row('TV series to start', tvOpen, { more: '#/c/tv?f=unwatched' });
   const played = owned.filter(i => i.play_count > 0).sort((a, b) => (b.last_played || '').localeCompare(a.last_played || '')).slice(0, 24);
