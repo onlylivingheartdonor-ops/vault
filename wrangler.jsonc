@@ -30,8 +30,8 @@
     }
   ],
   "vars": {
-    "ACCESS_TEAM": "",
-    "ACCESS_AUD": ""
+           "ACCESS_TEAM": "https://small-wind-b9c2.cloudflareaccess.com",
+       "ACCESS_AUD": "9b6ee94294d3a613007434d6d94a8e46f5fff72b483c1f42fcd42268d5c7dd2e"
   },
   "observability": { "enabled": true }
 }
