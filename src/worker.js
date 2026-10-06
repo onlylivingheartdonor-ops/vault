@@ -4,7 +4,7 @@
 // stays thin — it stores data, proxies BGG/TMDB/UPC calls (adding the keys), and moves
 // image bytes. Parsing and mapping of source data happens in the browser.
 
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 const SCHEMA_VERSION = '1';
 
 // ---------------------------------------------------------------- defaults
@@ -594,7 +594,7 @@ async function api(request, env, url, user) {
   // never overwrite edits made elsewhere at the same time.
   if ((mm = p.match(/^\/items\/(\d+)\/data$/)) && m === 'PATCH') {
     const b = await body(request);
-    const allowed = ['watch', 'archive', 'ma_url'];
+    const allowed = ['watch', 'archive', 'ma_url', 'thumb'];
     const stmts = [];
     for (const k of allowed) {
       if (!(k in b)) continue;

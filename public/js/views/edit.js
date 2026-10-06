@@ -4,6 +4,7 @@ import { S, api, esc, $, typeOf, coverUrl, toast, busy, namesInput, getItems, in
   refreshBoot, today, normalizeItem, fieldValue, backdropOf, setCustomCover } from '../util.js';
 import { setTitle, setBackdrop, refreshNav } from '../app.js';
 import { freeNamesFor } from '../watch.js';
+import { sharpenItem } from '../thumbs.js';
 
 let pending = null;   // prefill handed over from the Add page
 export function setPrefill(p) { pending = p; }
@@ -227,6 +228,7 @@ export async function renderEdit(ctx, typeKey, id) {
         (r.warnings || []).forEach(w => toast(w, 'warn'));
       }
       if (coverFile) await setCustomCover(newId, coverFile);
+      else if (!id && body.cover_url) await sharpenItem(newId);   // sharp grid image from the fetched cover
       invalidate(t.key);
       await refreshBoot(); refreshNav();
       toast(id ? 'Saved.' : `“${title}” added to ${body.status === 'wishlist' ? 'your wishlist' : t.name}.`, 'ok');

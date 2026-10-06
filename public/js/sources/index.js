@@ -2,6 +2,7 @@
 import * as bgg from './bgg.js';
 import * as tmdb from './tmdb.js';
 import { api, typeOf, getAllItems } from '../util.js';
+import { sharpenItem } from '../thumbs.js';
 
 export const SOURCE_NAMES = { bgg: 'BoardGameGeek', tmdb_movie: 'TMDB', tmdb_tv: 'TMDB' };
 
@@ -55,6 +56,7 @@ export async function refreshItem(item) {
   await api(`/api/items/${item.id}`, { method: 'PUT', body });
   const media = await api(`/api/items/${item.id}/media`, { method: 'POST', body: {
     cover_url: item.cover_custom ? null : pre.cover_url, thumb_url: pre.thumb_url, backdrop_url: pre.backdrop_url } });
+  if (!item.cover_custom) await sharpenItem(item.id);   // the refreshed cover gets a sharp grid image too
   return media.warnings || [];
 }
 

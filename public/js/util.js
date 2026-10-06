@@ -124,7 +124,15 @@ export function debounce(fn, ms = 250) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
-export const thumbUrl = it => it && it.cover ? `/media/thumbs/${encodeURIComponent(it.cover)}` : null;
+// The grid image. Once Vault has made a sharp copy for the current cover, its version is added to the
+// address so browsers fetch the new copy instead of a cached old one.
+export const thumbUrl = it => {
+  if (!it || !it.cover) return null;
+  const t = it.data && it.data.thumb;
+  return `/media/thumbs/${encodeURIComponent(it.cover)}${t && t.for === it.cover ? `?v=${encodeURIComponent(t.v)}` : ''}`;
+};
+// Board game boxes are mostly square or wide, so their tiles are square; movies and TV keep the tall poster shape.
+export const isSquare = it => { const t = it && typeOf(it.type); return !!(t && t.source === 'bgg'); };
 export const coverUrl = it => it && it.cover ? `/media/covers/${encodeURIComponent(it.cover)}` : null;
 // Games have no fanart, so their cover doubles as a heavily blurred backdrop.
 export function backdropOf(it) {
@@ -206,10 +214,12 @@ export async function uploadBlob(key, blob) {
 // Replace an item's cover with an image file chosen by the user.
 export async function setCustomCover(itemId, file) {
   const name = `${itemId}_${nowStamp()}.jpg`;
-  const [cover, thumb] = await Promise.all([resizeImage(file, 1200, 1800), resizeImage(file, 360, 1080, 0.82)]);
+  const [cover, thumb] = await Promise.all([resizeImage(file, 1200, 1800), resizeImage(file, 720, 1080, 0.88)]);
   await uploadBlob(`covers/${name}`, cover);
   await uploadBlob(`thumbs/${name}`, thumb);
   await api(`/api/items/${itemId}`, { method: 'PUT', body: { cover: name, cover_custom: 1 } });
+  // Mark the grid copy as the sharp kind, so the background rebuild leaves it alone.
+  await api(`/api/items/${itemId}/data`, { method: 'PATCH', body: { thumb: { for: name, v: Date.now().toString(36) } } });
 }
 
 export async function addPhotos(itemId, files) {

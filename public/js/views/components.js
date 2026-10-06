@@ -1,6 +1,6 @@
 // Reusable pieces: poster cards, rows, hover-to-backdrop.
 import { icon } from '../icons.js';
-import { esc, thumbUrl, backdropOf, itemSubtitle, typeOf, $$ } from '../util.js';
+import { esc, thumbUrl, backdropOf, itemSubtitle, typeOf, isSquare, $$ } from '../util.js';
 import { setBackdrop } from '../app.js';
 import { isFreeToWatch } from '../watch.js';
 
@@ -17,12 +17,14 @@ export function posterCard(it, { showType = false, stackCount = 0, href = null }
   const sub = showType && t ? t.name : itemSubtitle(it);
   const link = href || `#/item/${it.type}/${it.id}`;
   const bd = backdropOf(it);
-  return `<a class="poster-card${stackCount ? ' stack' : ''}" href="${link}" data-bd="${esc(bd ? bd.url : '')}" data-soft="${bd && bd.soft ? 1 : 0}">
-    <div class="poster">
+  // The frame only matters in rows that mix square game tiles with tall posters: it keeps every tile
+  // the same height there, with the square ones sitting on the bottom edge.
+  return `<a class="poster-card${stackCount ? ' stack' : ''}${isSquare(it) ? ' sq' : ''}" href="${link}" data-bd="${esc(bd ? bd.url : '')}" data-soft="${bd && bd.soft ? 1 : 0}">
+    <div class="pframe"><div class="poster">
       ${th ? `<img src="${th}" alt="" loading="lazy">` : `<div class="noimg">${icon(t ? t.icon : 'box')}<span>${esc(it.title)}</span></div>`}
       <div class="badges">${badges.join('')}</div>${plays}
       ${stackCount ? `<span class="stack-count">${stackCount}</span>` : ''}
-    </div>
+    </div></div>
     <div class="pc-title">${esc(stackCount ? it.group_name : it.title)}</div>
     <div class="pc-sub">${esc(stackCount ? `${stackCount} items` : sub)}</div>
   </a>`;

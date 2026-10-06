@@ -10,6 +10,7 @@ import { renderAdd } from './views/add.js';
 import { renderSettings } from './views/settings.js';
 import { renderSearch, renderLoans, renderWishlist, renderWatchlist, searchItems, renderSetup } from './views/misc.js';
 import { startWatchChecks } from './watch.js';
+import { startBackgroundThumbFixes } from './thumbs.js';
 
 export { scanBarcode };
 
@@ -244,6 +245,8 @@ async function start() {
   route();
   // Quietly keep "where to watch" information up to date in the background.
   setTimeout(() => { startWatchChecks().catch(() => {}); }, 5000);
+  // ...and quietly make sharp grid images for anything that still has an old, small one.
+  setTimeout(() => { startBackgroundThumbFixes().catch(() => {}); }, 9000);
 }
 
 start();

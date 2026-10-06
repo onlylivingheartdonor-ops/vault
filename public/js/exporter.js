@@ -1,5 +1,5 @@
 // HTML catalog export, built in the browser and downloaded as a .zip.
-import { api, typeOf, normalizeItem, loadScript, downloadBlob, fieldValue } from './util.js';
+import { api, typeOf, normalizeItem, loadScript, downloadBlob, fieldValue, thumbUrl, isSquare } from './util.js';
 
 export const CORE_EXPORT_FIELDS = [
   ['group_name', 'Group'], ['condition', 'Condition'], ['location', 'Location'], ['my_rating', 'My rating'],
@@ -23,6 +23,8 @@ header input{margin-left:auto;background:{panel2};color:{text};border:1px solid 
 .card .poster{aspect-ratio:2/3;border-radius:8px;overflow:hidden;background:{panel2};box-shadow:0 6px 18px rgba(0,0,0,.35);transition:transform .18s ease}
 .card:hover .poster{transform:translateY(-4px) scale(1.03)}
 .card img{width:100%;height:100%;object-fit:cover;display:block}
+.card.sq .poster{aspect-ratio:1}
+.card.sq img{object-fit:contain}
 .card .noimg{display:flex;align-items:center;justify-content:center;height:100%;padding:12px;text-align:center;color:{muted}}
 .card .t{margin-top:8px;font-weight:600;font-size:14px;line-height:1.3}
 .card .s{color:{muted};font-size:12.5px}
@@ -100,7 +102,7 @@ export async function exportCatalog({ type, ids, theme = 'dark', fields, title }
     onProgress(`Adding ${it.title} (${n} of ${items.length})…`);
     let cover = null, thumb = null, bd = null, soft = false;
     if (it.cover) {
-      const [cb, tb] = await Promise.all([fetchBlob(`/media/covers/${encodeURIComponent(it.cover)}`), fetchBlob(`/media/thumbs/${encodeURIComponent(it.cover)}`)]);
+      const [cb, tb] = await Promise.all([fetchBlob(`/media/covers/${encodeURIComponent(it.cover)}`), fetchBlob(thumbUrl(it))]);
       if (cb) { cover = `c_${it.cover}`; root.file(`images/${cover}`, cb); }
       if (tb) { thumb = `t_${it.cover}`; root.file(`images/${thumb}`, tb); }
     }
@@ -142,7 +144,7 @@ ${bd ? `<div class="bd${soft ? ' soft' : ''}" style="background-image:url('../im
     const img = thumb || cover;
     const poster = img ? `<img src="images/${e(img)}" alt="" loading="lazy">` : `<div class="noimg">${e(it.title)}</div>`;
     const key = [it.title, year, dd.edition || '', it.group_name || ''].join(' ').toLowerCase();
-    cards.push(`<a class="card" data-k="${e(key)}" href="items/${it.id}.html"><div class="poster">${poster}</div>`
+    cards.push(`<a class="card${isSquare(it) ? ' sq' : ''}" data-k="${e(key)}" href="items/${it.id}.html"><div class="poster">${poster}</div>`
       + `<div class="t">${e(it.title)}</div><div class="s">${e(sub)}</div></a>`);
   }
   const dateWords = d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });

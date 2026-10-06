@@ -1,12 +1,13 @@
 // Settings: theme, data sources, collection templates, import, export, backup, about.
 import { icon, ICON_NAMES } from '../icons.js';
-import { S, api, esc, $, $$, typeOf, toast, busy, modal, confirmBox, refreshBoot, invalidate, store, getItems, pickFile } from '../util.js';
+import { S, api, esc, $, $$, typeOf, toast, busy, modal, confirmBox, refreshBoot, invalidate, store, getItems, getAllItems, pickFile } from '../util.js';
 import { setTitle, setBackdrop, refreshNav, getThemeMode, setThemeMode } from '../app.js';
 import { testSource } from '../sources/index.js';
 import { importFromBgg } from '../importer.js';
 import { exportCatalog, CORE_EXPORT_FIELDS } from '../exporter.js';
 import { makeBackup, restoreBackup } from '../backup.js';
 import { watchStatus, startWatchChecks, ATTRIBUTION } from '../watch.js';
+import { thumbStatus, startThumbFixes, needsThumb } from '../thumbs.js';
 
 const TABS = [
   ['general', 'General', 'gear'], ['sources', 'Sources', 'link'], ['collections', 'Collections', 'grid'],
@@ -44,6 +45,11 @@ async function general(body) {
       <p>Vault quietly checks your movies and TV shows for free streaming and public-domain copies, and re-checks each one about once a month, since what\u2019s free changes often. It runs in the background whenever Vault is open.</p>
       <div class="btn-row"><button class="btn" id="wtw-run">${icon('refresh')} Check now</button></div>
     </section>
+    <section class="panel"><div class="panel-head"><h2>Sharp poster images</h2><span class="muted" id="thumb-status"></span></div>
+      <p>The poster grid uses a smaller copy of each cover. Vault now makes those copies large enough to stay sharp on big screens and TVs, and upgrades older ones by itself whenever Vault is open on a computer. You can also do them all now; keep this page open while it runs.</p>
+      <div class="btn-row"><button class="btn" id="thumb-run">${icon('image')} Sharpen remaining images now</button>
+        <button class="btn ghost" id="thumb-all" title="Rebuilds every grid image, even ones already done">Rebuild all</button></div>
+    </section>
     <section class="panel"><div class="panel-head"><h2>Your data</h2></div>
       <p>Your collection is stored in your Cloudflare account. For an extra copy you control, use <a class="ext" href="#/settings/backup">Backup</a> and save the file to OneDrive.</p>
     </section>`;
@@ -60,6 +66,25 @@ async function general(body) {
   showWtw();
   document.addEventListener('vault-watch-progress', showWtw);
   $('#wtw-run', body).onclick = () => { startWatchChecks().catch(e => toast(e.message, 'error')); setTimeout(showWtw, 300); };
+  const showThumbs = async () => {
+    const el = $('#thumb-status', body);
+    if (!el) { document.removeEventListener('vault-thumb-progress', showThumbs); return; }
+    if (thumbStatus.running) {
+      el.textContent = `Working: ${thumbStatus.done} of ${thumbStatus.total}`;
+    } else {
+      let left = 0;
+      try { left = (await getAllItems()).filter(needsThumb).length; } catch (e) { /* ignore */ }
+      el.textContent = left ? `${left} still to do` : 'All sharp';
+      if (thumbStatus.failed) el.textContent += ` \u00b7 ${thumbStatus.failed} couldn\u2019t be done`;
+    }
+  };
+  showThumbs();
+  document.addEventListener('vault-thumb-progress', showThumbs);
+  $('#thumb-run', body).onclick = () => { startThumbFixes({ pace: 150 }).catch(e => toast(e.message, 'error')); };
+  $('#thumb-all', body).onclick = async () => {
+    if (!await confirmBox('Rebuild every grid image?', 'This redoes the sharp copy for every item, including ones already done. It takes a few minutes for a large collection.', 'Rebuild all', 'primary')) return;
+    startThumbFixes({ force: true, pace: 150 }).catch(e => toast(e.message, 'error'));
+  };
   $('#copy-url', body).onclick = async () => {
     try { await navigator.clipboard.writeText(location.origin); toast('Copied.', 'ok'); } catch (e) { toast(location.origin); }
   };
@@ -279,6 +304,8 @@ async function importTab(body, ctx) {
       run.running = false;
       run.show(run.state);
       await refreshBoot(); refreshNav();
+      invalidate('boardgame');
+      startThumbFixes({ pace: 300 }).catch(() => {});   // sharp grid images for the newly imported games
     }
   };
 }
